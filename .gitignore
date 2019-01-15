@@ -1,0 +1,10 @@
+# editor config
+.idea/
+.vscode/
+
+# running cache
+__pycache__/
+
+# project
+data/
+*.log
