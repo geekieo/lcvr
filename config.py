@@ -1,7 +1,7 @@
 # -*- coding:utf-8 -*-
 import os
-from lcvr.env_utils import get_server_info
-from lcvr.logger import Logging
+from env_utils import get_server_info
+from logger import Logging
 
 logger = Logging(name='config', filename='lcvr').logger
 
@@ -33,18 +33,16 @@ if server_info['ip'] in production_ip or server_info['ip'] in development_ip:
 
   elif server_info['ip'] in development_ip:
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"    # 指定 GPU 0 or 1
-    data_pattern = r"/data/dataset/yt8m/v2/video/train*.tfrecord"
     logger.info('Development config loaded.')
 else:
   # doesn't have GPU
-  data_pattern = r"D:/dataset/yt8m/v2/video/train*.tfrecord"
   logger.info('No GPU config loaded.')
 
 
 if __name__ == '__main__':
   try:
-    print(tfconfig.gpu_options.per_process_gpu_memory_fraction)
+    logger.info(tfconfig.gpu_options.per_process_gpu_memory_fraction)
   except Exception as e:
-    print(e)
-  print(cache_size)
+    logger.info(e)
+  logger.info(cache_size)
 
