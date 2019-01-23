@@ -33,17 +33,17 @@ class VisualSimilarNet(BaseModel):
   """similar network only use visual feature
   """
 
-  def create_model(self, 
-                   model_input,
-                   vocab_size, 
-                   num_mixtures=None,
-                   l2_penalty=1e-8,):
+  def create_model(self, model_input, vocab_size, l2_penalty=1e-8,**unused_params):
     """Creates a similar network
 
     Args:
-      model
+      model_input: 'batch' x 'num_features' matrix of input features.
+      vocab_size: The number of classes in the dataset.
 
-    """
+    Returns:
+      A dictionary with a tensor containing the probability predictions of the
+      model in the 'predictions' key. The dimensions of the tensor are
+      batch_size x num_classes."""
     layer_1 = slim.fully_connected(
         model_input, 2560, activation_fn=tf.nn.sigmoid,
         weights_regularizer=slim.l2_regularizer(l2_penalty))

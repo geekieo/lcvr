@@ -4,10 +4,12 @@ import json
 import time
 
 import tensorflow as tf
+import tensorflow.contrib.slim as slim
 from tensorflow import app
 from tensorflow import flags
 from tensorflow import gfile
 from tensorflow.python.lib.io import file_io
+from tensorflow.python.client import device_lib
 
 import losses
 import readers
@@ -21,16 +23,18 @@ FLAGS = flags.FLAGS
 
 if __name__ == '__main__':
   # Dataset flags.
-  flags.DEFINE_string("train_dir", "/tmp/yt8m_model/",
-                      "The directory to save the model files in.")
   flags.DEFINE_string(
-      "train_data_pattern", "/data/dataset/yt8m/v2/video/train*.tfrecord",
+      "train_dir", "/model/yt8m_model/",
+      "The directory to save the model files in.")
+  flags.DEFINE_string(
+      "train_data_pattern", "d:/dataset/yt8m/v2/video/train*.tfrecord",
       "File glob for the training dataset. If the files refer to Frame Level "
       "features (i.e. tensorflow.SequenceExample), then set --reader_type "
       "format. The (Sequence)Examples are expected to have 'rgb' byte array "
       "sequence feature as well as a 'labels' int64 context feature.")
-  flags.DEFINE_string("feature_names", "mean_rgb", "Name of the feature "
-                      "to use for training.")
+  flags.DEFINE_string(
+      "feature_names", "mean_rgb", "Name of the feature "
+      "to use for training.")
   flags.DEFINE_string("feature_sizes", "1024", "Length of the feature vectors.")
 
   # Model flags.
@@ -41,7 +45,7 @@ if __name__ == '__main__':
       "features. The model must also be set appropriately (i.e. to read 3D "
       "batches VS 4D batches.")
   flags.DEFINE_string(
-      "model", "LogisticModel",
+      "model", "VisualSimilarNet",
       "Which architecture to use for the model. Models are defined "
       "in models.py.")
   flags.DEFINE_bool(
@@ -50,21 +54,54 @@ if __name__ == '__main__':
       " new model instance.")
 
   # Training flags.
-  flags.DEFINE_integer("max_steps", None,
-                       "The maximum number of iterations of the training loop.")
-  flags.DEFINE_integer("export_model_steps", 1000,
-                       "The period, in number of steps, with which the model "
-                       "is exported for batch prediction.")
-  flags.DEFINE_string("label_loss", "CrossEntropyLoss",
-                      "Which loss function to use for training the model.")
-  flags.DEFINE_string("optimizer", "AdamOptimizer",
-                      "What optimizer class to use.")
+  flags.DEFINE_integer(
+      "num_gpu", 1,
+      "The maximum number of GPU devices to use for training. "
+      "Flag only applies if GPUs are installed")
+  flags.DEFINE_integer(
+      "batch_size", 1024,
+      "How many examples to process per batch for training.")
+  flags.DEFINE_integer(
+      "max_steps", None,
+      "The maximum number of iterations of the training loop.")
+  flags.DEFINE_integer(
+      "export_model_steps", 1000,
+      "The period, in number of steps, with which the model "
+      "is exported for batch prediction.")
+  flags.DEFINE_integer(
+      "num_epochs", 5,
+      "How many passes to make over the dataset before halting training.")
+  flags.DEFINE_string(
+      "label_loss", "CrossEntropyLoss",
+      "Which loss function to use for training the model.")
+  flags.DEFINE_string(
+      "optimizer", "AdamOptimizer",
+      "What optimizer class to use.")
+  flags.DEFINE_float(
+      "base_learning_rate", 0.01,
+      "Which learning rate to start with.")
+  flags.DEFINE_float(
+      "learning_rate_decay", 0.95,
+      "Learning rate decay factor to be applied"
+      "every learning_rate_decay_examples.")
+  flags.DEFINE_float(
+      "learning_rate_decay_examples", 4000000,
+      "Multiply current learning rate by learning_rate_decay "
+      "every learning_rate_decay_examples.")
+  flags.DEFINE_float(
+      "clip_gradient_norm", 1.0, 
+      "Norm to clip gradients to.")
+  flags.DEFINE_float(
+      "regularization_penalty", 1.0,
+      "How much weight to give to the regularization loss "
+      "(the label loss has a weight of 1).")
 
   # Other flags.   
-  flags.DEFINE_bool(
-      "log_device_placement", False,
-      "Whether to write the device on which every op will run into the "
-      "logs on startup.")  
+  flags.DEFINE_integer("num_readers", 8,
+      "How many threads to use for reading input files.")
+  flags.DEFINE_bool("log_device_placement", False,
+      "Whether to write the device on which every op will "
+      "run into the logs on startup.")  
 
 
 def get_reader():
@@ -119,7 +156,10 @@ def get_input_data_tensors(reader,
                     data_pattern + "'.")
     logging.info("Number of training files: %s.", str(len(files)))
     filename_queue = tf.train.string_input_producer(
-        files, num_epochs=num_epochs, shuffle=True)
+        files, num_epochs=num_epochs, shuffle=True) # deprecated
+    # filename_queue = tf.data.Dataset.from_tensor_slices(
+    #     tensors=files).shuffle(tf.shape(files,
+    #      out_type=tf.int64)[0]).repeat(num_epochs)
     training_data = [
         reader.prepare_reader(filename_queue) for _ in range(num_readers)
     ]
@@ -130,7 +170,53 @@ def get_input_data_tensors(reader,
         capacity=batch_size * 5,
         min_after_dequeue=batch_size,
         allow_smaller_final_batch=True,
-        enqueue_many=True)
+        enqueue_many=True) # deprecated
+
+
+def combine_gradients(tower_grads):
+  """Calculate the combined gradient for each shared variable across all towers.
+
+  Note that this function provides a synchronization point across all towers.
+
+  Args:
+    tower_grads: List of lists of (gradient, variable) tuples. The outer list
+      is over individual gradients. The inner list is over the gradient
+      calculation for each tower.
+  Returns:
+     List of pairs of (gradient, variable) where the gradient has been summed
+     across all towers.
+  """
+  filtered_grads = [[x for x in grad_list if x[0] is not None] for grad_list in tower_grads]
+  final_grads = []
+  for i in range(len(filtered_grads[0])):
+    grads = [filtered_grads[t][i] for t in range(len(filtered_grads))]
+    grad = tf.stack([x[0] for x in grads], 0)
+    grad = tf.reduce_sum(grad, 0)
+    final_grads.append((grad, filtered_grads[0][i][1],))
+
+  return final_grads
+
+
+def clip_gradient_norms(gradients_to_variables, max_norm):
+  """Clips the gradients by the given value.
+
+  Args:
+    gradients_to_variables: A list of gradient to variable pairs (tuples).
+    max_norm: the maximum norm value.
+
+  Returns:
+    A list of clipped gradient to variable pairs.
+  """
+  clipped_grads_and_vars = []
+  for grad, var in gradients_to_variables:
+    if grad is not None:
+      if isinstance(grad, tf.IndexedSlices):
+        tmp = tf.clip_by_norm(grad.values, max_norm)
+        grad = tf.IndexedSlices(tmp, grad.indices, grad.dense_shape)
+      else:
+        grad = tf.clip_by_norm(grad, max_norm)
+    clipped_grads_and_vars.append((grad, var))
+  return clipped_grads_and_vars
 
 
 def build_graph(reader,
@@ -271,11 +357,11 @@ def build_graph(reader,
   if regularization_penalty != 0:
     reg_loss = tf.reduce_mean(tf.stack(tower_reg_losses))
     tf.summary.scalar("reg_loss", reg_loss)
-  merged_gradients = utils.combine_gradients(tower_gradients)
+  merged_gradients = combine_gradients(tower_gradients)
 
   if clip_gradient_norm > 0:
     with tf.name_scope('clip_grads'):
-      merged_gradients = utils.clip_gradient_norms(merged_gradients, clip_gradient_norm)
+      merged_gradients = clip_gradient_norms(merged_gradients, clip_gradient_norm)
 
   train_op = optimizer.apply_gradients(merged_gradients, global_step=global_step)
 
@@ -417,6 +503,23 @@ class Trainer(object):
                 num_epochs=FLAGS.num_epochs)
 
     return tf.train.Saver(max_to_keep=0, keep_checkpoint_every_n_hours=0.25)
+  
+  def export_model(self, global_step_val, saver, save_path, session):
+
+    # If the model has already been exported at this step, return.
+    if global_step_val == self.last_model_export_step:
+      return
+
+    last_checkpoint = saver.save(session, save_path, global_step_val)
+
+    model_dir = "{0}/export/step_{1}".format(self.train_dir, global_step_val)
+    logging.info("%s: Exporting the model at step %s to %s.",
+                 task_as_string(self.task), global_step_val, model_dir)
+
+    self.model_exporter.export_model(
+        model_dir=model_dir,
+        global_step_val=global_step_val,
+        last_checkpoint=last_checkpoint)
 
   def run(self, start_new_model=False):
     """Performs training on the currently defined Tensorflow graph.
@@ -488,7 +591,61 @@ class Trainer(object):
 
     logging.info("%s: Starting managed session.", task_as_string(self.task))
     with supervisor.managed_session(target, config=self.config) as sess:
-      pass
+      try:
+        logging.info("%s: Entering training loop.", task_as_string(self.task))
+        while (not supervisor.should_stop()) and (not self.max_steps_reached):
+          batch_start_time = time.time()
+          _, global_step_val, loss_val, predictions_val, labels_val = sess.run(
+              [train_op, global_step, loss, predictions, labels])
+          seconds_per_batch = time.time() - batch_start_time
+          examples_per_second = labels_val.shape[0] / seconds_per_batch
+
+          if self.max_steps and self.max_steps <= global_step_val:
+            self.max_steps_reached = True
+
+          if self.is_master and global_step_val % 10 == 0 and self.train_dir:
+            # eval_start_time = time.time()
+            # hit_at_one = eval_util.calculate_hit_at_one(predictions_val, labels_val)
+            # perr = eval_util.calculate_precision_at_equal_recall_rate(predictions_val,
+            #                                                           labels_val)
+            # gap = eval_util.calculate_gap(predictions_val, labels_val)
+            # eval_end_time = time.time()
+            # eval_time = eval_end_time - eval_start_time
+
+            # logging.info("training step " + str(global_step_val) + " | Loss: " + ("%.2f" % loss_val) +
+            #   " Examples/sec: " + ("%.2f" % examples_per_second) + " | Hit@1: " +
+            #   ("%.2f" % hit_at_one) + " PERR: " + ("%.2f" % perr) +
+            #   " GAP: " + ("%.2f" % gap))
+
+            # supervisor.summary_writer.add_summary(
+            #     utils.MakeSummary("model/Training_Hit@1", hit_at_one),
+            #         global_step_val)
+            # supervisor.summary_writer.add_summary(
+            #     utils.MakeSummary("model/Training_Perr", perr), global_step_val)
+            # supervisor.summary_writer.add_summary(
+            #     utils.MakeSummary("model/Training_GAP", gap), global_step_val)
+            # supervisor.summary_writer.add_summary(
+            #     utils.MakeSummary("global_step/Examples/Second",
+            #         examples_per_second), global_step_val)
+            # supervisor.summary_writer.flush()
+
+            # # Exporting the model every x steps
+            # time_to_export = ((self.last_model_export_step == 0) or
+            #     (global_step_val - self.last_model_export_step
+            #      >= self.export_model_steps))
+
+            # if self.is_master and time_to_export:
+            #   self.export_model(global_step_val, supervisor.saver, supervisor.save_path, sess)
+            #   self.last_model_export_step = global_step_val
+          else:
+            logging.info("training step " + str(global_step_val) + " | Loss: " +
+              ("%.2f" % loss_val) + " Examples/sec: " + ("%.2f" % examples_per_second))
+      except tf.errors.OutOfRangeError:
+        logging.info("%s: Done training -- epoch limit reached.",
+                     task_as_string(self.task))
+
+    logging.info("%s: Exited training loop.", task_as_string(self.task))
+    supervisor.Stop()
 
 
 def main(unused_argv):

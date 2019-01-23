@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import logger
+
+logging = logger.Logging('train','lcvr')
 
 def GetListOfFeatureNamesAndSizes(feature_names, feature_sizes):
   """Extract the list of feature names and the dimensionality of each feature
@@ -39,4 +42,3 @@ def Dequantize(feat_vector, max_quantized_value=2, min_quantized_value=-2):
   scalar = quantized_range / 255.0
   bias = (quantized_range / 512.0) + min_quantized_value
   return feat_vector * scalar + bias
-
