@@ -45,11 +45,11 @@ if __name__ == '__main__':
       "features. The model must also be set appropriately (i.e. to read 3D "
       "batches VS 4D batches.")
   flags.DEFINE_string(
-      "model", "VisualSimilarNet",
+      "model", "DeepNeuralNet",
       "Which architecture to use for the model. Models are defined "
       "in models.py.")
   flags.DEFINE_bool(
-      "start_new_model", False,
+      "start_new_model", True,
       "If set, this will not resume from a checkpoint and will instead create a"
       " new model instance.")
 
@@ -76,7 +76,7 @@ if __name__ == '__main__':
       "Which loss function to use for training the model.")
   flags.DEFINE_string(
       "optimizer", "AdamOptimizer",
-      "What optimizer class to use.")
+      "What optimizer class to use. More optimizer, see tf.train module")
   flags.DEFINE_float(
       "base_learning_rate", 0.01,
       "Which learning rate to start with.")
@@ -629,21 +629,20 @@ class Trainer(object):
             #         examples_per_second), global_step_val)
             # supervisor.summary_writer.flush()
 
-            # # Exporting the model every x steps
-            # time_to_export = ((self.last_model_export_step == 0) or
-            #     (global_step_val - self.last_model_export_step
-            #      >= self.export_model_steps))
+            # Exporting the model every x steps
+            time_to_export = ((self.last_model_export_step == 0) or
+                (global_step_val - self.last_model_export_step
+                 >= self.export_model_steps))
 
-            # if self.is_master and time_to_export:
-            #   self.export_model(global_step_val, supervisor.saver, supervisor.save_path, sess)
-            #   self.last_model_export_step = global_step_val
+            if self.is_master and time_to_export:
+              self.export_model(global_step_val, supervisor.saver, supervisor.save_path, sess)
+              self.last_model_export_step = global_step_val
           else:
             logging.info("training step " + str(global_step_val) + " | Loss: " +
               ("%.2f" % loss_val) + " Examples/sec: " + ("%.2f" % examples_per_second))
       except tf.errors.OutOfRangeError:
         logging.info("%s: Done training -- epoch limit reached.",
                      task_as_string(self.task))
-
     logging.info("%s: Exited training loop.", task_as_string(self.task))
     supervisor.Stop()
 
