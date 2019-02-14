@@ -3,6 +3,7 @@
 import tensorflow as tf
 import utils
 
+
 class BaseReader(object):
   """Inherit from this class when implementing new readers."""
 
@@ -151,6 +152,7 @@ class YT8MFrameFeatureReader(BaseReader):
 
     return batch_video_ids, batch_video_matrix, batch_labels, batch_frames
 
+
 class YT8MAggregatedFeatureReader(BaseReader):
   """Reads TFRecords of pre-aggregated Examples.
 
@@ -209,7 +211,7 @@ class YT8MAggregatedFeatureReader(BaseReader):
           [self.feature_sizes[feature_index]], tf.float32)
 
     features = tf.parse_example(serialized_examples, features=feature_map)
-    labels = tf.sparse_to_indicator(features["labels"], self.num_classes)
+    labels = tf.sparse_to_indicator(features["labels"], self.num_classes) #转换为稠密的布尔指示器张量
     labels.set_shape([None, self.num_classes])
     concatenated_features = tf.concat([
         features[feature_name] for feature_name in self.feature_names], 1)

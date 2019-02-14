@@ -30,8 +30,7 @@ class LogisticModel(BaseModel):
 
 
 class DeepNeuralNet(BaseModel):
-  """similar network only use visual feature
-  """
+  """a shallow deep neural network"""
 
   def create_model(self, model_input, vocab_size, l2_penalty=1e-8,**unused_params):
     """Creates a similar network
@@ -57,21 +56,19 @@ class DeepNeuralNet(BaseModel):
         weights_regularizer=slim.l2_regularizer(l2_penalty))
     return {"predictions": output}
 
-class VisualSimilarNet(BaseModel):
-  """similar network only use visual feature
-  """
+class VisualNet(BaseModel):
+  """embedding network of visual input"""
 
   def create_model(self, model_input, vocab_size, l2_penalty=1e-8,**unused_params):
-    """Creates a similar network
+    """Creates a embedding network only use visual features
 
     Args:
       model_input: 'batch' x 'num_features' matrix of input features.
-      vocab_size: The number of classes in the dataset.
 
     Returns:
       A dictionary with a tensor containing the probability predictions of the
-      model in the 'predictions' key. The dimensions of the tensor are
-      batch_size x num_classes."""
+      model in the 'embeddings' key. The dimensions of the tensor are
+      batch_size x number of nodes in output layer."""
     model_input = tf.nn.l2_normalize(model_input)
     layer_1 = slim.fully_connected(
         model_input, 2560, activation_fn=tf.nn.sigmoid,
@@ -81,9 +78,4 @@ class VisualSimilarNet(BaseModel):
         weights_regularizer=slim.l2_regularizer(l2_penalty))
     output = tf.nn.l2_normalize(layer_2)
     return {"predictions": output}
-
-
-
-
-
 

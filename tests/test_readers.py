@@ -12,52 +12,52 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string(
     "train_data_pattern", "d:/dataset/yt8m/v2/video/train*.tfrecord",
     "File glob for the training dataset. ")
-flags.DEFINE_string("feature_names", "mean_rgb", 
-    "Name of the feature to use for training.")
-flags.DEFINE_string("feature_sizes", "1024",
-    "Length of the feature vectors.")
 
 # Training flags
-flags.DEFINE_integer("batch_size",1024,
+flags.DEFINE_integer("batch_size",3,
     "How many examples to process per batch for training.")
 flags.DEFINE_integer("num_epochs",5,
     "How many passes to make over the dataset before halting training.")
 
+feature_names = ["mean_rgb", "mean_audio"]
+num_classes = 3862
 
-files = gfile.Glob( FLAGS.train_data_pattern)
-if not files:
-      raise IOError("Unable to find training files. data_pattern='" +
-                    data_pattern + "'.")
-logging.info("Number of training files: %s.", str(len(files)))
-filename_queue = tf.train.string_input_producer(
-    files, num_epochs=FLAGS.num_epochs)
+def _parse_function(example_proto):
+  features = {"id": tf.FixedLenFeature([], tf.string, default_value=""),
+              "labels": tf.VarLenFeature(tf.int64)}
+  parsed_features = tf.parse_single_example(example_proto, features)
+  return parsed_features["id"], parsed_features["labels"]
 
-reader = tf.TFRecordReader()
-keys, serialized_examples = reader.read_up_to(filename_queue, num_records=FLAGS.batch_size)
+def train_input_fn():
+    filename_list = gfile.Glob(FLAGS.train_data_pattern)
+    if not filename_list:
+        raise IOError("Unable to find training files. data_pattern='" +
+                        data_pattern + "'.")
+    print("Number of training files: %s."%str(len(filename_list)))
+    # 定义Source
+    filenames = tf.placeholder(tf.string, shape=[None])
+    dataset = tf.data.TFRecordDataset(filenames)
+    # dataset = dataset.shuffle(train_size) # 缓存中的所有数据
+    dataset = dataset.map(_parse_function)  # 解析成 tensor
+    dataset = dataset.repeat(FLAGS.num_epochs)
+    dataset = dataset.batch(FLAGS.batch_size, drop_remainder=True)
+    #dataset = dataset.prefetch(1)          # 确保总有一个 batch 准备
+    # 消费数据
+    iterator = dataset.make_initializable_iterator()
+    next_element = iterator.get_next()  # tf.Tensor对象
+    # # 格式化
+    # labels = tf.sparse_to_indicator(next_element["labels"], num_classes) #转换为稠密的布尔指示器张量
+    # labels.set_shape([None, num_classes])
+    # concatenated_features = tf.concat([
+    #     next_element[feature_name] for feature_name in feature_names], 1)
+    
+    with tf.Session() as sess:
+        sess.run(iterator.initializer, feed_dict={filenames: filename_list})
+        for i in range(2):
+            value = sess.run(next_element)
+            assert isinstance(value,tuple)
+            print('value: ',value)
 
-feature_map = {"id": tf.FixedLenFeature([], tf.string),
-               "labels": tf.VarLenFeature(tf.int64)}
-features = tf.parse_example(serialized_examples, features=feature_map)
+if __name__ == "__main__":
+    train_input_fn()
 
-# labels = tf.sparse_to_indicator(features["labels"], self.num_classes)
-# labels.set_shape([None, self.num_classes])
-# batch_data = tf.train.batch(tensors=[features['id'], features['labels']],batch_size=2,dynamic_pad=True)
-# concatenated_features = tf.concat([
-#     features[feature_name] for feature_name in self.feature_names], 1)
-
-init_op = tf.group(tf.global_variables_initializer(),
-                       tf.local_variables_initializer())
-with tf.Session() as sess:
-  sess.run(init_op)
-  tf.train.start_queue_runners()
-  out_features = sess.run(features)
-  logging.info(out_features)
-
-
-# batch_features = tf.train.shuffle_batch_join(
-#         features,
-#         batch_size=FLAGS.batch_size,
-#         capacity=FLAGS.batch_size * 5,
-#         min_after_dequeue=FLAGS.batch_size,
-#         allow_smaller_final_batch=True,
-#         enqueue_many=True)

@@ -24,7 +24,7 @@ FLAGS = flags.FLAGS
 if __name__ == '__main__':
   # Dataset flags.
   flags.DEFINE_string(
-      "train_dir", "/model/yt8m_model/",
+      "train_dir", "/model/yt8m_CDML/",
       "The directory to save the model files in.")
   flags.DEFINE_string(
       "train_data_pattern", "d:/dataset/yt8m/v2/video/train*.tfrecord",
@@ -45,7 +45,7 @@ if __name__ == '__main__':
       "features. The model must also be set appropriately (i.e. to read 3D "
       "batches VS 4D batches.")
   flags.DEFINE_string(
-      "model", "DeepNeuralNet",
+      "model", "VisualNet",
       "Which architecture to use for the model. Models are defined "
       "in models.py.")
   flags.DEFINE_bool(
@@ -72,7 +72,7 @@ if __name__ == '__main__':
       "num_epochs", 5,
       "How many passes to make over the dataset before halting training.")
   flags.DEFINE_string(
-      "label_loss", "CrossEntropyLoss",
+      "label_loss", "TripletLoss",
       "Which loss function to use for training the model.")
   flags.DEFINE_string(
       "optimizer", "AdamOptimizer",

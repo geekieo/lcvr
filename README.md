@@ -1,4 +1,10 @@
 # Large-scale Content-Only Video Recommendation
+## Requirment
+
+
+## How to train
+python 
+
 ## Overview of Files
 
 ### lcvr 
