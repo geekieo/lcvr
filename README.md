@@ -1,9 +1,6 @@
 # Large-scale Content-Only Video Recommendation
 ## Requirment
-
-
-## How to train
-python 
+tensorflow
 
 ## Overview of Files
 
